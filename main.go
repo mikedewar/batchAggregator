@@ -45,24 +45,10 @@ func main() {
 		return
 	}
 
-	db, err := badger.Open(badger.DefaultOptions("/tmp/badger"))
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// clean up
-	err = db.DropAll()
-	if err != nil {
-		log.Fatal(err)
-	}
+	arrays := make(map[string][]Student)
 
 	start := time.Now()
-
-	// initialise merge operators
-	merges := make(map[string]*badger.MergeOperator)
-
-	addTimes := make([]time.Duration, len(res))
-
+	// group by age
 	for i, studentI := range res {
 		if i%1000 == 0 {
 			log.Println(i)
@@ -71,42 +57,46 @@ func main() {
 		if !ok {
 			log.Fatal("couldn't convert to student")
 		}
-		key := strconv.Itoa(int(student.Age))
+		key := strconv.Itoa(int(student.Age)) // <-- here's the group by key
 
-		var mo *badger.MergeOperator
-		mo, ok = merges[key]
-		if !ok {
-			// make a new merge operator
-			mo = db.GetMergeOperator([]byte(key), app, 1*time.Second)
-			log.Println(len(merges), key)
-			merges[key] = mo
-		}
+		// should be a btree
+		oldArray := arrays[key]
+		oldArray = append(oldArray, student)
+		arrays[key] = oldArray
+	}
+	elapsed := time.Since(start)
+	log.Printf("groupby took %s", elapsed)
 
-		studentBytes, err := json.Marshal(student)
+	// append the groups
+
+	db, err := badger.Open(badger.DefaultOptions("/tmp/badger"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	start = time.Now()
+
+	for key, students := range arrays {
+
+		mo := db.GetMergeOperator([]byte(key), app, 1*time.Second)
+
+		studentBytes, err := json.Marshal(students)
 		if err != nil {
 			log.Fatal(studentBytes)
 		}
 
-		st := time.Now()
 		mo.Add(studentBytes)
-		addTimes[i] = time.Since(st)
-
-	}
-
-	elapsed := time.Since(start)
-	log.Printf("Write took %s", elapsed)
-	log.Println(meanDuration(addTimes))
-
-	for _, mo := range merges {
 		mo.Stop()
-	}
+		log.Println(key)
 
-	pr.ReadStop()
-	fr.Close()
+	}
 
 	db.Close()
 
 	log.Println("stopped")
+
+	elapsed = time.Since(start)
+	log.Printf("Write took %s", elapsed)
 
 }
 
