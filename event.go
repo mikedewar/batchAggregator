@@ -1,10 +1,8 @@
 package main
 
-import "encoding"
-
 type Event interface {
-	encoding.BinaryUnmarshaler
-	encoding.BinaryMarshaler
+	UnmarshalBinary(data []byte) error
+	MarshalBinary() (data []byte, err error)
 }
 
 type Student struct {
