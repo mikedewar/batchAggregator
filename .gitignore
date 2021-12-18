@@ -1,3 +1,4 @@
 *.sum
+*.swp
 *.parquet
 batchProfiles

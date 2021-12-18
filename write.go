@@ -30,7 +30,7 @@ func WriteSample() {
 	for i := 0; i < num; i++ {
 		stu := Student{
 			Name:   "StudentName",
-			Age:    int32(20 + i%5),
+			Age:    int32(20 + i%100),
 			Id:     int64(i),
 			Weight: float32(50.0 + float32(i)*0.1),
 			Sex:    bool(i%2 == 0),
