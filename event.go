@@ -1,8 +1,11 @@
 package main
 
+import "strconv"
+
 type Event interface {
-	UnmarshalBinary(data []byte) error
-	MarshalBinary() (data []byte, err error)
+	Unmarshal(data []byte) error
+	Marshal() (data []byte, err error)
+	GroupByKey() GroupByField
 }
 
 type Student struct {
@@ -16,10 +19,15 @@ type Student struct {
 	Ignored int32            //without parquet tag and won't write
 }
 
-func (s *Student) UnmarshalBinary(data []byte) error {
+func (s *Student) Unmarshal(data []byte) error {
 	return nil
 }
 
-func (s *Student) MarshalBinary() (data []byte, err error) {
-	return nil
+func (s *Student) Marshal() (data []byte, err error) {
+	return nil, nil
+}
+
+func (s *Student) GroupByKey() GroupByField {
+	age := strconv.Itoa(int(s.Age))
+	return GroupByField(age)
 }

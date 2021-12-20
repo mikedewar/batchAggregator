@@ -2,81 +2,37 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
-	"strconv"
+	"os"
 	"time"
 
 	"github.com/dgraph-io/badger"
-	"github.com/xitongsys/parquet-go-source/local"
-	"github.com/xitongsys/parquet-go/reader"
 )
 
-type Student struct {
-	Name    string           `parquet:"name=name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	Age     int32            `parquet:"name=age, type=INT32"`
-	Id      int64            `parquet:"name=id, type=INT64"`
-	Weight  float32          `parquet:"name=weight, type=FLOAT"`
-	Sex     bool             `parquet:"name=sex, type=BOOLEAN"`
-	Day     int32            `parquet:"name=day, type=INT32, convertedtype=DATE"`
-	Scores  map[string]int32 `parquet:"name=scores, type=MAP, keytype=BYTE_ARRAY, keyconvertedtype=UTF8, valuetype=INT32"`
-	Ignored int32            //without parquet tag and won't write
-}
-
 func main() {
-	WriteSample()
 
-	fr, err := local.NewLocalFileReader("to_json.parquet")
-	if err != nil {
-		log.Println("Can't open file")
-		return
+	if _, err := os.Stat("to_json.parquet"); errors.Is(err, os.ErrNotExist) {
+		// path/to/whatever does not exist
+		log.Println("writing sample")
+		WriteSample()
 	}
 
-	pr, err := reader.NewParquetReader(fr, new(Student), 4)
-	if err != nil {
-		log.Println("Can't create parquet reader", err)
-		return
-	}
-
-	num := int(pr.GetNumRows())
-	log.Print(num)
-	res, err := pr.ReadByNumber(num)
-	if err != nil {
-		log.Println("Can't read", err)
-		return
-	}
-
-	arrays := make(map[string][]Student)
-
-	start := time.Now()
-	// group by age
-	for i, studentI := range res {
-		if i%1000 == 0 {
-			log.Println(i)
-		}
-		student, ok := studentI.(Student)
-		if !ok {
-			log.Fatal("couldn't convert to student")
-		}
-		key := strconv.Itoa(int(student.Age)) // <-- here's the group by key
-
-		// should be a btree
-		oldArray := arrays[key]
-		oldArray = append(oldArray, student)
-		arrays[key] = oldArray
-	}
-	elapsed := time.Since(start)
-	log.Printf("groupby took %s", elapsed)
+	fname := "to_json.parquet"
+	gb, err := NewGroupBy(fname)
 
 	// append the groups
 
-	db, err := badger.Open(badger.DefaultOptions("/tmp/badger"))
+	options := badger.DefaultOptions("/tmp/badger")
+	options.Logger = nil
+	db, err := badger.Open(options)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	start = time.Now()
+	bar := NewProgressBar(len(gb.arrays), fname+": Commit")
 
-	for key, students := range arrays {
+	for key, students := range gb.arrays {
 
 		mo := db.GetMergeOperator([]byte(key), app, 1*time.Second)
 
@@ -87,16 +43,12 @@ func main() {
 
 		mo.Add(studentBytes)
 		mo.Stop()
-		log.Println(key)
+
+		bar.Add(1)
 
 	}
 
 	db.Close()
-
-	log.Println("stopped")
-
-	elapsed = time.Since(start)
-	log.Printf("Write took %s", elapsed)
 
 }
 
