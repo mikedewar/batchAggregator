@@ -2,7 +2,9 @@ package main
 
 import (
 	"log"
+	"time"
 
+	"github.com/dgraph-io/badger"
 	"github.com/xitongsys/parquet-go-source/local"
 	"github.com/xitongsys/parquet-go/reader"
 )
@@ -11,7 +13,7 @@ type GroupByField string
 
 type GroupBy struct {
 	fname  string
-	arrays map[GroupByField][]Event
+	arrays map[GroupByField]Events
 }
 
 func NewGroupBy(fname string) (GroupBy, error) {
@@ -40,10 +42,10 @@ func NewGroupBy(fname string) (GroupBy, error) {
 		return gb, err
 	}
 
-	arrays := make(map[GroupByField][]Event)
+	arrays := make(map[GroupByField]Events)
 
 	// group by age
-	bar := NewProgressBar(num, fname+" :GroupBy")
+	bar := NewProgressBar(num, fname+": GroupBy")
 	for _, studentI := range res {
 		bar.Add(1)
 		student, ok := studentI.(Student)
@@ -53,8 +55,12 @@ func NewGroupBy(fname string) (GroupBy, error) {
 		key := student.GroupByKey()
 
 		// should be a btree
-		oldArray := arrays[key]
-		oldArray = append(oldArray, &student)
+		oldArray, ok := arrays[key]
+		if !ok {
+			a := make([]Student, 1)
+			oldArray = Students(a)
+		}
+		oldArray = oldArray.Add(&student)
 		arrays[key] = oldArray
 	}
 
@@ -62,4 +68,24 @@ func NewGroupBy(fname string) (GroupBy, error) {
 
 	return gb, nil
 
+}
+
+func (gb *GroupBy) Commit(db *badger.DB) {
+	bar := NewProgressBar(len(gb.arrays), gb.fname+": Commit")
+
+	for key, value := range gb.arrays {
+
+		mo := db.GetMergeOperator([]byte(key), app, 1*time.Second)
+
+		valueBytes, err := value.Marshal()
+		if err != nil {
+			log.Fatal(valueBytes)
+		}
+
+		mo.Add(valueBytes)
+		mo.Stop()
+
+		bar.Add(1)
+
+	}
 }
