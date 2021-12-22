@@ -2,9 +2,12 @@ package main
 
 import (
 	"log"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/dgraph-io/badger"
+	"github.com/vbauerster/mpb/v7"
 	"github.com/xitongsys/parquet-go-source/local"
 	"github.com/xitongsys/parquet-go/reader"
 )
@@ -12,84 +15,120 @@ import (
 type GroupByField string
 
 type GroupBy struct {
-	fname  string
-	arrays map[GroupByField]Events
+	fname        string
+	arrays       map[GroupByField]Events
+	num          int
+	events       chan Event
+	progressBars *mpb.Progress
 }
 
-func NewGroupBy(fname string) (GroupBy, error) {
+func NewGroupBy(fname string) GroupBy {
 
 	gb := GroupBy{
-		fname: fname,
+		fname:        fname,
+		events:       make(chan Event),
+		arrays:       make(map[GroupByField]Events),
+		progressBars: InitProgressBars(),
 	}
 
-	fr, err := local.NewLocalFileReader(fname)
+	return gb
+}
+
+func (gb *GroupBy) ReadFiles(fname string) error {
+	dirname := "."
+
+	files, err := os.ReadDir(dirname)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	parquet_files := make([]string, 0)
+	for _, file := range files {
+		if strings.HasSuffix(file.Name(), ".parquet") {
+			parquet_files = append(parquet_files, file.Name())
+		}
+	}
+
+	if len(parquet_files) == 0 {
+		log.Fatal("can't find any parquet files in ", dirname)
+	}
+
+	fr, err := local.NewLocalFileReader(parquet_files[0])
 	if err != nil {
 		log.Println("Can't open file")
-		return gb, err
+		return err
 	}
 
 	pr, err := reader.NewParquetReader(fr, new(Student), 4)
 	if err != nil {
 		log.Println("Can't create parquet reader", err)
-		return gb, err
+		return err
 	}
 
-	/*
-		num := int(pr.GetNumRows())
-		log.Println("reading", num, "rows from", fname)
-		res, err := pr.ReadByNumber(num)
-		if err != nil {
-			log.Println("Can't read", err)
-			return gb, err
-		}
-	*/
-
 	num := int(pr.GetNumRows())
-	res := make([]Student, num)
-	bar := NewProgressBar(num, fname+": Read   ")
-	log.Println("reading", num, "rows from", fname)
-	for i := 0; i < num; i++ {
-		bar.Add(1)
+	gb.num = num
+	bar := gb.AddProgressBar(gb.num, fname+": Read   ")
+	//log.Println("reading", gb.num, "rows from", fname)
+	for i := 0; i < gb.num; i++ {
+		bar.Increment()
 		stus := make([]Student, 1)
 		if err = pr.Read(&stus); err != nil {
 			log.Fatal("Read error", err)
 		}
-		res[i] = stus[0]
+		gb.events <- &stus[0]
 	}
+	close(gb.events)
 	pr.ReadStop()
+	return nil
+}
 
-	arrays := make(map[GroupByField]Events)
+func (gb *GroupBy) AsyncBuildGroup() {
+
+	N := 9999
+
+	res := make([]Event, N)
+	i := 0
+	for e := range gb.events {
+		res[i] = e
+		i++
+		if i == N {
+			//log.Println("building group", len(res))
+			gb.BuildGroup(res)
+			i = 0
+			// blat res and start again
+			res = nil
+			res = make([]Event, N)
+		}
+	}
+
+	// do the last
+	res = res[:i]
+	gb.BuildGroup(res)
+}
+
+func (gb *GroupBy) BuildGroup(res []Event) {
 
 	// group by age
-	bar = NewProgressBar(num, fname+": GroupBy")
+	bar := gb.AddProgressBar(len(res), gb.fname+": GroupBy")
 	for _, studentI := range res {
-		bar.Add(1)
-		/*student, ok := studentI.(Student)
-		if !ok {
-			log.Fatal("couldn't convert to student")
-		}
-		*/
+		bar.Increment()
 		student := studentI
 		key := student.GroupByKey()
 
 		// should be a btree
-		oldArray, ok := arrays[key]
+		oldArray, ok := gb.arrays[key]
 		if !ok {
 			a := make([]Student, 1)
 			oldArray = Students(a)
 		}
-		oldArray = oldArray.Add(&student)
-		arrays[key] = oldArray
+		oldArray = oldArray.Add(student)
+		gb.arrays[key] = oldArray
 	}
-
-	gb.arrays = arrays
-
-	return gb, nil
 
 }
 
 func (gb *GroupBy) Commit(db *badger.DB) {
-	bar := NewProgressBar(len(gb.arrays), gb.fname+": Commit ")
+	bar := gb.AddProgressBar(len(gb.arrays), gb.fname+": Commit ")
 
 	for key, value := range gb.arrays {
 
@@ -103,7 +142,7 @@ func (gb *GroupBy) Commit(db *badger.DB) {
 		mo.Add(valueBytes)
 		mo.Stop()
 
-		bar.Add(1)
+		bar.Increment()
 
 	}
 }
