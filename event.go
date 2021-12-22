@@ -62,14 +62,56 @@ type Students []Student
 
 func (ss Students) Unmarshal(data []byte) error {
 	var protoStudents protos.Students
-	err := proto.Unmarshal(data, protoStudents)
+	err := proto.Unmarshal(data, &protoStudents)
 	if err != nil {
+		log.Println(string(data))
 		return err
 	}
+	// now protoStudents is a struct called Students with an array in it also
+	// called Students. So let's unpack that into our []Students
+	myss := make([]Student, len(protoStudents.Students))
+	for i, s := range protoStudents.Students {
+
+		myss[i] = Student{
+			Name:    s.Name,
+			Age:     s.Age,
+			Id:      s.Id,
+			Weight:  s.Weight,
+			Sex:     s.Sex,
+			Day:     s.Day,
+			Scores:  s.Scores,
+			Ignored: s.Ignored,
+		}
+
+	}
+
+	ss = myss
+	return nil
+
 }
 
 func (ss Students) Marshal() ([]byte, error) {
-	return nil, nil
+	var protoStudents protos.Students
+	outStudents := make([]*protos.Student, len(ss))
+	// we need to convert ss into a proto.Students and then marhsal
+	for i, s := range ss {
+
+		outStudents[i] = &protos.Student{
+			Name:    s.Name,
+			Age:     s.Age,
+			Id:      s.Id,
+			Weight:  s.Weight,
+			Sex:     s.Sex,
+			Day:     s.Day,
+			Scores:  s.Scores,
+			Ignored: s.Ignored,
+		}
+
+	}
+
+	protoStudents.Students = outStudents
+
+	return proto.Marshal(&protoStudents)
 }
 
 func (ss Students) Add(e Event) Events {
@@ -82,9 +124,15 @@ func (ss Students) Add(e Event) Events {
 func app(currentStudents, newStudent []byte) []byte {
 	// unmarshal the original array
 	var students Students
-	log.Println(currentStudents)
 	err := students.Unmarshal(currentStudents)
-	log.Fatal(err)
+	if err != nil {
+		log.Fatal(err)
+	}
+	var student Students
+	err = student.Unmarshal(newStudent)
+	if err != nil {
+		log.Fatal(err)
+	}
 	return nil
 }
 

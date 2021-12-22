@@ -34,24 +34,42 @@ func NewGroupBy(fname string) (GroupBy, error) {
 		return gb, err
 	}
 
+	/*
+		num := int(pr.GetNumRows())
+		log.Println("reading", num, "rows from", fname)
+		res, err := pr.ReadByNumber(num)
+		if err != nil {
+			log.Println("Can't read", err)
+			return gb, err
+		}
+	*/
+
 	num := int(pr.GetNumRows())
+	res := make([]Student, num)
+	bar := NewProgressBar(num, fname+": Read   ")
 	log.Println("reading", num, "rows from", fname)
-	res, err := pr.ReadByNumber(num)
-	if err != nil {
-		log.Println("Can't read", err)
-		return gb, err
+	for i := 0; i < num; i++ {
+		bar.Add(1)
+		stus := make([]Student, 1)
+		if err = pr.Read(&stus); err != nil {
+			log.Fatal("Read error", err)
+		}
+		res[i] = stus[0]
 	}
+	pr.ReadStop()
 
 	arrays := make(map[GroupByField]Events)
 
 	// group by age
-	bar := NewProgressBar(num, fname+": GroupBy")
+	bar = NewProgressBar(num, fname+": GroupBy")
 	for _, studentI := range res {
 		bar.Add(1)
-		student, ok := studentI.(Student)
+		/*student, ok := studentI.(Student)
 		if !ok {
 			log.Fatal("couldn't convert to student")
 		}
+		*/
+		student := studentI
 		key := student.GroupByKey()
 
 		// should be a btree
@@ -71,7 +89,7 @@ func NewGroupBy(fname string) (GroupBy, error) {
 }
 
 func (gb *GroupBy) Commit(db *badger.DB) {
-	bar := NewProgressBar(len(gb.arrays), gb.fname+": Commit")
+	bar := NewProgressBar(len(gb.arrays), gb.fname+": Commit ")
 
 	for key, value := range gb.arrays {
 

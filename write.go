@@ -26,7 +26,7 @@ func WriteSample() {
 
 	pw.RowGroupSize = 128 * 1024 * 1024 //128M
 	pw.CompressionType = parquet.CompressionCodec_SNAPPY
-	num := 100000
+	num := 1000000
 	for i := 0; i < num; i++ {
 		stu := Student{
 			Name:   "StudentName",
