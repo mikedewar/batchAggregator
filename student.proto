@@ -1,0 +1,20 @@
+syntax = "proto3";
+package student;
+
+option go_package = "github.com/mikedewar/batchProfiles/protos";
+
+message Student {
+  string Name = 1; 
+  int32 Age = 2;
+  int64  Id = 3;
+  float Weight = 4;
+  bool Sex = 5;
+  int32 Day = 6;
+  map<string, int32> Scores =7;
+  int32 Ignored =8 ;
+}
+
+message Students {
+  repeated Student Students =1;
+}
+

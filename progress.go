@@ -23,6 +23,8 @@ func NewProgressBar(num int, desc string) *progressbar.ProgressBar {
 		progressbar.OptionEnableColorCodes(true),
 		progressbar.OptionSetTheme(theme),
 		progressbar.OptionOnCompletion(cmpl),
+		//progressbar.OptionShowCount(),
+		progressbar.OptionSetWidth(10),
 	)
 
 }
