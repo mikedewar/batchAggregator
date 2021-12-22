@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"math/rand"
 	"strconv"
 	"time"
 
@@ -31,7 +32,7 @@ func WriteSample(numFiles int) {
 
 		pw.RowGroupSize = 128 * 1024 * 1024 //128M
 		pw.CompressionType = parquet.CompressionCodec_SNAPPY
-		num := 100000
+		num := 500000 + rand.Intn(50000)
 		for i := 0; i < num; i++ {
 			stu := Student{
 				Name:   "StudentName",

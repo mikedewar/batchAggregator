@@ -5,20 +5,16 @@ import (
 	"log"
 	"os"
 	"sync"
-
-	"github.com/dgraph-io/badger"
 )
 
 func main() {
 
 	if _, err := os.Stat("sample_1.parquet"); errors.Is(err, os.ErrNotExist) {
 		log.Println("writing sample")
-		WriteSample(2)
+		WriteSample(20)
 	}
 
-	fname := "sample_1.parquet"
-
-	gb := NewGroupBy(fname)
+	gb := NewGroupBy()
 	// set the groupby running
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -27,22 +23,14 @@ func main() {
 		gb.AsyncBuildGroup()
 	}()
 
-	// open the parquet file and group by a key
-	err := gb.ReadFiles(fname)
+	// read all the parquet files in the current directory
+	err := gb.ReadFiles()
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	wg.Wait()
-	options := badger.DefaultOptions("/tmp/badger")
-	options.Logger = nil
-	db, err := badger.Open(options)
-	defer db.Close()
-	if err != nil {
-		log.Fatal(err)
-	}
 
-	// commit the group by to disk
-	gb.Commit(db)
+	gb.Stop()
 
 }

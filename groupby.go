@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dgraph-io/badger"
@@ -15,26 +16,34 @@ import (
 type GroupByField string
 
 type GroupBy struct {
-	fname        string
-	arrays       map[GroupByField]Events
-	num          int
 	events       chan Event
 	progressBars *mpb.Progress
+	db           *badger.DB
 }
 
-func NewGroupBy(fname string) GroupBy {
+func NewGroupBy() GroupBy {
+
+	options := badger.DefaultOptions("/tmp/badger")
+	options.Logger = nil
+	db, err := badger.Open(options)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	gb := GroupBy{
-		fname:        fname,
 		events:       make(chan Event),
-		arrays:       make(map[GroupByField]Events),
 		progressBars: InitProgressBars(),
+		db:           db,
 	}
 
 	return gb
 }
 
-func (gb *GroupBy) ReadFiles(fname string) error {
+func (gb *GroupBy) Stop() {
+	gb.db.Close()
+}
+
+func (gb *GroupBy) ReadFiles() error {
 	dirname := "."
 
 	files, err := os.ReadDir(dirname)
@@ -53,38 +62,57 @@ func (gb *GroupBy) ReadFiles(fname string) error {
 		log.Fatal("can't find any parquet files in ", dirname)
 	}
 
-	fr, err := local.NewLocalFileReader(parquet_files[0])
-	if err != nil {
-		log.Println("Can't open file")
-		return err
+	var wg sync.WaitGroup
+	totalbar := gb.AddProgressBar(len(parquet_files), "total")
+
+	maxGoroutines := 10
+	guard := make(chan struct{}, maxGoroutines)
+
+	for _, file := range parquet_files {
+		wg.Add(1)
+
+		guard <- struct{}{}
+
+		go func(file string) {
+			defer wg.Done()
+			fr, err := local.NewLocalFileReader(file)
+			if err != nil {
+				log.Fatal("Can't open file")
+			}
+
+			pr, err := reader.NewParquetReader(fr, new(Student), 4)
+			if err != nil {
+				log.Fatal("Can't create parquet reader", err)
+			}
+
+			num := int(pr.GetNumRows())
+			bar := gb.AddProgressBar(num, file+": Read   ")
+			for i := 0; i < num; i++ {
+				bar.Increment()
+				stus := make([]Student, 1)
+				if err = pr.Read(&stus); err != nil {
+					log.Fatal("Read error", err)
+				}
+				if len(stus) == 0 {
+					log.Println("wtf")
+					continue
+				}
+				gb.events <- &stus[0]
+			}
+			pr.ReadStop()
+			totalbar.Increment()
+			<-guard
+		}(file)
 	}
 
-	pr, err := reader.NewParquetReader(fr, new(Student), 4)
-	if err != nil {
-		log.Println("Can't create parquet reader", err)
-		return err
-	}
-
-	num := int(pr.GetNumRows())
-	gb.num = num
-	bar := gb.AddProgressBar(gb.num, fname+": Read   ")
-	//log.Println("reading", gb.num, "rows from", fname)
-	for i := 0; i < gb.num; i++ {
-		bar.Increment()
-		stus := make([]Student, 1)
-		if err = pr.Read(&stus); err != nil {
-			log.Fatal("Read error", err)
-		}
-		gb.events <- &stus[0]
-	}
+	wg.Wait()
 	close(gb.events)
-	pr.ReadStop()
 	return nil
 }
 
 func (gb *GroupBy) AsyncBuildGroup() {
 
-	N := 9999
+	N := 99999
 
 	res := make([]Event, N)
 	i := 0
@@ -108,31 +136,34 @@ func (gb *GroupBy) AsyncBuildGroup() {
 
 func (gb *GroupBy) BuildGroup(res []Event) {
 
+	arrays := make(map[GroupByField]Events)
+
 	// group by age
-	bar := gb.AddProgressBar(len(res), gb.fname+": GroupBy")
 	for _, studentI := range res {
-		bar.Increment()
+		//	bar.Increment()
 		student := studentI
 		key := student.GroupByKey()
 
 		// should be a btree
-		oldArray, ok := gb.arrays[key]
+		oldArray, ok := arrays[key]
 		if !ok {
 			a := make([]Student, 1)
 			oldArray = Students(a)
 		}
 		oldArray = oldArray.Add(student)
-		gb.arrays[key] = oldArray
+		arrays[key] = oldArray
 	}
+	gb.Commit(arrays)
 
 }
 
-func (gb *GroupBy) Commit(db *badger.DB) {
-	bar := gb.AddProgressBar(len(gb.arrays), gb.fname+": Commit ")
+func (gb *GroupBy) Commit(arrays map[GroupByField]Events) {
 
-	for key, value := range gb.arrays {
+	//	bar := gb.AddProgressBar(len(arrays), "Commit ")
 
-		mo := db.GetMergeOperator([]byte(key), app, 1*time.Second)
+	for key, value := range arrays {
+
+		mo := gb.db.GetMergeOperator([]byte(key), app, 1*time.Second)
 
 		valueBytes, err := value.Marshal()
 		if err != nil {
@@ -142,7 +173,7 @@ func (gb *GroupBy) Commit(db *badger.DB) {
 		mo.Add(valueBytes)
 		mo.Stop()
 
-		bar.Increment()
+		//		bar.Increment()
 
 	}
 }
