@@ -43,6 +43,10 @@ func (gb *GroupBy) Stop() {
 	gb.db.Close()
 }
 
+// ReadFiles looks for all the parquet files in a folder, reads them by parsing
+// each line and placing the resulting object on a channel for downstream
+// processing. ReadFiles is designed to manage the reading of multiple files at
+// the same time.
 func (gb *GroupBy) ReadFiles() error {
 	dirname := "."
 
@@ -62,9 +66,13 @@ func (gb *GroupBy) ReadFiles() error {
 		log.Fatal("can't find any parquet files in ", dirname)
 	}
 
+	// the watigroup means that all the file reading goroutines must be complete
+	// before this function returns
 	var wg sync.WaitGroup
 	totalbar := gb.AddProgressBar(len(parquet_files), "total")
 
+	// the guard channel blocks the for loop below from kicking off too many
+	// file-reading goroutines at a time.
 	maxGoroutines := 10
 	guard := make(chan struct{}, maxGoroutines)
 
@@ -110,6 +118,9 @@ func (gb *GroupBy) ReadFiles() error {
 	return nil
 }
 
+//AsyncBuildGroup reads a channel of events, batching them up into large
+//groups and sending them to BuildGroup to be re-ogranised by the GroupByKey
+//and then commited to the
 func (gb *GroupBy) AsyncBuildGroup() {
 
 	N := 99999
@@ -120,8 +131,8 @@ func (gb *GroupBy) AsyncBuildGroup() {
 		res[i] = e
 		i++
 		if i == N {
-			//log.Println("building group", len(res))
-			gb.BuildGroup(res)
+			grouped := gb.BuildGroup(res)
+			gb.Commit(grouped)
 			i = 0
 			// blat res and start again
 			res = nil
@@ -134,11 +145,11 @@ func (gb *GroupBy) AsyncBuildGroup() {
 	gb.BuildGroup(res)
 }
 
-func (gb *GroupBy) BuildGroup(res []Event) {
+func (gb *GroupBy) BuildGroup(res []Event) map[GroupByField]Events {
 
 	arrays := make(map[GroupByField]Events)
 
-	// group by age
+	// group by the GroupByKey
 	for _, studentI := range res {
 		//	bar.Increment()
 		student := studentI
@@ -153,7 +164,7 @@ func (gb *GroupBy) BuildGroup(res []Event) {
 		oldArray = oldArray.Add(student)
 		arrays[key] = oldArray
 	}
-	gb.Commit(arrays)
+	return arrays
 
 }
 
