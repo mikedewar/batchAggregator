@@ -142,7 +142,8 @@ func (gb *GroupBy) AsyncBuildGroup() {
 
 	// do the last
 	res = res[:i]
-	gb.BuildGroup(res)
+	grouped := gb.BuildGroup(res)
+	gb.Commit(grouped)
 }
 
 func (gb *GroupBy) BuildGroup(res []Event) map[GroupByField]Events {
