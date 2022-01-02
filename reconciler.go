@@ -5,6 +5,8 @@ import (
 	"log"
 	"os"
 	"sync"
+
+	"github.com/bits-and-blooms/bloom/v3"
 )
 
 type file string  // id representing a file (e.g. a filename)
@@ -23,12 +25,13 @@ type Reconciler struct {
 	files    map[file]processingState  // the current state of each file
 	events   map[event]processingState // the current state of each event
 	register map[file][]event          // the register of file -> events
+	hashes   map[file]*bloom.BloomFilter
 }
 
 type ReconciliationReport struct {
-	File      file                      `json:"fileIdentifier"`
-	NumEvents int                       `json:"numEvents"`
-	Events    map[event]processingState `json:"events"`
+	File        file              `json:"fileIdentifier"`
+	NumEvents   int               `json:"numEvents"`
+	BloomFilter bloom.BloomFilter `json:"bloomFilter"`
 }
 
 func NewReconciler() *Reconciler {
@@ -36,6 +39,7 @@ func NewReconciler() *Reconciler {
 		files:    make(map[file]processingState),
 		events:   make(map[event]processingState),
 		register: make(map[file][]event),
+		hashes:   make(map[file]*bloom.BloomFilter),
 	}
 }
 
@@ -46,7 +50,7 @@ func (r *Reconciler) RegisterEvent(f file, e event) {
 	_, ok := r.events[e]
 	if ok {
 		// TODO this is an opportunity to be idempotent but for now just panic
-		log.Fatal("processing an already processing event")
+		log.Fatal("processing an already processing event: ", e)
 	}
 
 	// register the event as Processing
@@ -55,7 +59,7 @@ func (r *Reconciler) RegisterEvent(f file, e event) {
 	// append the event to the file's list of events in the register
 	fileEvents, ok := r.register[f]
 	if !ok {
-		log.Fatal("registering event to unknown file")
+		log.Fatal("registering event to unknown file: ", string(f))
 	}
 	fileEvents = append(fileEvents, e)
 	r.register[f] = fileEvents
@@ -64,10 +68,17 @@ func (r *Reconciler) RegisterEvent(f file, e event) {
 func (r *Reconciler) RegisterFile(f file) {
 	r.Lock()
 	defer r.Unlock()
+	_, ok := r.files[f]
+	if ok {
+		// TODO opportunity to be idempotent
+		log.Fatal("registering aready registered file")
+	}
 	r.files[f] = Processing
+	r.register[f] = make([]event, 0)
+	r.hashes[f] = bloom.NewWithEstimates(1000000, 0.01)
 }
 
-func (r *Reconciler) CommitEvent(e event) {
+func (r *Reconciler) CommitEvent(f file, e event) {
 	r.Lock()
 	defer r.Unlock()
 	currentstate, ok := r.events[e]
@@ -80,6 +91,10 @@ func (r *Reconciler) CommitEvent(e event) {
 		log.Fatal("trying to commit an event that wasn't being processed")
 	}
 	r.events[e] = Committed
+	// add the event to the hash for the report
+	hash := r.hashes[f]
+	r.hashes[f] = hash.AddString(string(e))
+
 }
 
 func (r *Reconciler) CommitFile(f file) {
@@ -147,7 +162,6 @@ func (r *Reconciler) PersistReport(f file) error {
 	report := ReconciliationReport{
 		File:      f,
 		NumEvents: len(events),
-		Events:    r.events,
 	}
 
 	b, err := json.Marshal(report)

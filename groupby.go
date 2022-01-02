@@ -16,9 +16,16 @@ import (
 type GroupByField string
 
 type GroupBy struct {
-	events       chan Event
+	events       chan eventWrapper
 	progressBars *mpb.Progress
 	db           *badger.DB
+	reconciler   *Reconciler
+}
+
+// eventWrapper lets us keep track of which file the event came from
+type eventWrapper struct {
+	event Event
+	f     file
 }
 
 func NewGroupBy() GroupBy {
@@ -31,9 +38,10 @@ func NewGroupBy() GroupBy {
 	}
 
 	gb := GroupBy{
-		events:       make(chan Event),
+		events:       make(chan eventWrapper),
 		progressBars: InitProgressBars(),
 		db:           db,
+		reconciler:   NewReconciler(),
 	}
 
 	return gb
@@ -55,10 +63,10 @@ func (gb *GroupBy) ReadFiles() error {
 		log.Fatal(err)
 	}
 
-	parquet_files := make([]string, 0)
-	for _, file := range files {
-		if strings.HasSuffix(file.Name(), ".parquet") {
-			parquet_files = append(parquet_files, file.Name())
+	parquet_files := make([]file, 0)
+	for _, f := range files {
+		if strings.HasSuffix(f.Name(), ".parquet") {
+			parquet_files = append(parquet_files, file(f.Name()))
 		}
 	}
 
@@ -76,14 +84,14 @@ func (gb *GroupBy) ReadFiles() error {
 	maxGoroutines := 10
 	guard := make(chan struct{}, maxGoroutines)
 
-	for _, file := range parquet_files {
+	for _, f := range parquet_files {
 		wg.Add(1)
 
 		guard <- struct{}{}
 
-		go func(file string) {
+		go func(f file) {
 			defer wg.Done()
-			fr, err := local.NewLocalFileReader(file)
+			fr, err := local.NewLocalFileReader(string(f))
 			if err != nil {
 				log.Fatal("Can't open file")
 			}
@@ -93,8 +101,10 @@ func (gb *GroupBy) ReadFiles() error {
 				log.Fatal("Can't create parquet reader", err)
 			}
 
+			gb.reconciler.RegisterFile(f)
+
 			num := int(pr.GetNumRows())
-			bar := gb.AddProgressBar(num, file+": Read   ")
+			bar := gb.AddProgressBar(num, string(f)+": Read   ")
 			for i := 0; i < num; i++ {
 				bar.Increment()
 				stus := make([]Student, 1)
@@ -105,12 +115,15 @@ func (gb *GroupBy) ReadFiles() error {
 					log.Println("wtf")
 					continue
 				}
-				gb.events <- &stus[0]
+				e := eventWrapper{&stus[0], f}
+				gb.events <- e
 			}
 			pr.ReadStop()
 			totalbar.Increment()
+			gb.reconciler.CommitFile(f)
 			<-guard
-		}(file)
+		}(f)
+
 	}
 
 	wg.Wait()
@@ -128,7 +141,12 @@ func (gb *GroupBy) AsyncBuildGroup() {
 	res := make([]Event, N)
 	i := 0
 	for e := range gb.events {
-		res[i] = e
+
+		eventID := e.event.GetID()
+
+		gb.reconciler.RegisterEvent(e.f, event(eventID))
+
+		res[i] = e.event
 		i++
 		if i == N {
 			grouped := gb.BuildGroup(res)

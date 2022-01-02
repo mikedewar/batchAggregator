@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/xitongsys/parquet-go-source/local"
 	"github.com/xitongsys/parquet-go/parquet"
 	"github.com/xitongsys/parquet-go/writer"
@@ -37,7 +38,7 @@ func WriteSample(numFiles int) {
 			stu := Student{
 				Name:   "StudentName",
 				Age:    int32(20 + i%100),
-				Id:     int64(i),
+				Id:     uuid.NewString(),
 				Weight: float32(50.0 + float32(i)*0.1),
 				Sex:    bool(i%2 == 0),
 				Day:    int32(time.Now().Unix() / 3600 / 24),
