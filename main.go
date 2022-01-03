@@ -33,4 +33,8 @@ func main() {
 
 	gb.Stop()
 
+	for _, f := range gb.files {
+		gb.reconciler.PersistReport(f)
+	}
+
 }

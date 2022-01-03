@@ -20,6 +20,7 @@ type GroupBy struct {
 	progressBars *mpb.Progress
 	db           *badger.DB
 	reconciler   *Reconciler
+	files        []file
 }
 
 // eventWrapper lets us keep track of which file the event came from
@@ -73,6 +74,8 @@ func (gb *GroupBy) ReadFiles() error {
 	if len(parquet_files) == 0 {
 		log.Fatal("can't find any parquet files in ", dirname)
 	}
+
+	gb.files = parquet_files
 
 	// the watigroup means that all the file reading goroutines must be complete
 	// before this function returns
@@ -138,7 +141,8 @@ func (gb *GroupBy) AsyncBuildGroup() {
 
 	N := 99999
 
-	res := make([]Event, N)
+	res := make([]eventWrapper, N)
+
 	i := 0
 	for e := range gb.events {
 
@@ -146,21 +150,37 @@ func (gb *GroupBy) AsyncBuildGroup() {
 
 		gb.reconciler.RegisterEvent(e.f, event(eventID))
 
-		res[i] = e.event
+		res[i] = e
 		i++
 		if i == N {
-			grouped := gb.BuildGroup(res)
+
+			// this is clumsy
+			togroup := make([]Event, N)
+			for j, e := range res {
+				togroup[j] = e.event
+			}
+
+			grouped := gb.BuildGroup(togroup)
 			gb.Commit(grouped)
 			i = 0
+
+			// commit all the events in the group
+			for _, e := range res {
+				gb.reconciler.CommitEvent(e.f, event(e.event.GetID()))
+			}
 			// blat res and start again
 			res = nil
-			res = make([]Event, N)
+			res = make([]eventWrapper, N)
 		}
 	}
 
 	// do the last
 	res = res[:i]
-	grouped := gb.BuildGroup(res)
+	togroup := make([]Event, i)
+	for j, e := range res {
+		togroup[j] = e.event
+	}
+	grouped := gb.BuildGroup(togroup)
 	gb.Commit(grouped)
 }
 
@@ -189,8 +209,6 @@ func (gb *GroupBy) BuildGroup(res []Event) map[GroupByField]Events {
 
 func (gb *GroupBy) Commit(arrays map[GroupByField]Events) {
 
-	//	bar := gb.AddProgressBar(len(arrays), "Commit ")
-
 	for key, value := range arrays {
 
 		mo := gb.db.GetMergeOperator([]byte(key), app, 1*time.Second)
@@ -202,8 +220,6 @@ func (gb *GroupBy) Commit(arrays map[GroupByField]Events) {
 
 		mo.Add(valueBytes)
 		mo.Stop()
-
-		//		bar.Increment()
 
 	}
 }

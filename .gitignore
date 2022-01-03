@@ -1,4 +1,5 @@
 *.sum
+*.json
 *.swp
 *.parquet
 batchProfiles

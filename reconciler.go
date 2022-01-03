@@ -46,11 +46,11 @@ func NewReconciler() *Reconciler {
 func (r *Reconciler) RegisterEvent(f file, e event) {
 	r.Lock()
 	defer r.Unlock()
-	// check we're not already processing
+	// check this is a new event
 	_, ok := r.events[e]
 	if ok {
 		// TODO this is an opportunity to be idempotent but for now just panic
-		log.Fatal("processing an already processing event: ", e)
+		log.Fatal("processing an already processing or committed event: ", e)
 	}
 
 	// register the event as Processing
@@ -88,7 +88,7 @@ func (r *Reconciler) CommitEvent(f file, e event) {
 	}
 	// make sure we were processing
 	if currentstate != Processing {
-		log.Fatal("trying to commit an event that wasn't being processed")
+		log.Fatal("trying to commit an event that wasn't being processed. Its state was ", currentstate)
 	}
 	r.events[e] = Committed
 	// add the event to the hash for the report
