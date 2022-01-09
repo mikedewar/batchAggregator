@@ -11,7 +11,7 @@ func main() {
 
 	if _, err := os.Stat("sample_1.parquet"); errors.Is(err, os.ErrNotExist) {
 		log.Println("writing sample")
-		WriteSample(20)
+		WriteSample(5)
 	}
 
 	gb := NewGroupBy()
@@ -33,8 +33,10 @@ func main() {
 
 	gb.Stop()
 
-	for _, f := range gb.files {
-		gb.reconciler.PersistReport(f)
-	}
+	/*
+		for _, f := range gb.files {
+			gb.reconciler.PersistReport(f)
+		}
+	*/
 
 }
