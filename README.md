@@ -31,12 +31,10 @@ protoc student.proto --go_out=/Users/mikedewar/go/src
 
 ## Reconciliation
 
-We pay close attention to reconciliation. Here's the process:
-
-1. when we read an event we register it against its file
-2. when we've finished reading a file we mark the file as complete, to indicate
-   we dont' expect any more events from that file
-3. when we've processed an event we commit it
-4. at any point we can check if a file has had all its events committed
-
+I had hoped to do some sort of reconcilation en route through the group-by
+process. Turns out to do this seriously slows life down a lot, and even then
+I'm not entire sure if I was reconciling much of anything. Basically we need to
+make sure that every event in the source data in the archive is present in the 
+grouped data on disk. Starting to think it might make more sense as a post-hoc
+process.
 

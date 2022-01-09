@@ -1,0 +1,75 @@
+package main
+
+import (
+	"testing"
+	"time"
+
+	"github.com/dgraph-io/badger"
+	"github.com/stretchr/testify/assert"
+)
+
+func mergeFunc(a, b []byte) []byte {
+	return append(a, b...)
+}
+
+func TestNewDB(t *testing.T) {
+	db := NewDB("/tmp/testbadger", mergeFunc)
+	db.db.Close()
+}
+
+func TestGetMO(t *testing.T) {
+	// first call will get a new MO
+	db := NewDB("/tmp/testbadger", mergeFunc)
+	defer db.db.Close()
+	newmo := db.GetMO("bob")
+	// second call should get the same MO
+	samemo := db.GetMO("bob")
+	assert.Equal(t, newmo, samemo, "the merge operator returned by GetMO under the same key should always be the same operator")
+}
+
+func TestStop(t *testing.T) {
+	// Stop should cause all the mergeoperators to flush
+	// so let's set two going, and then stop them.  They by default flush at 60s
+	// intervals so as long as we call Stop within 60s the test should be good
+	db := NewDB("/tmp/testbadger", mergeFunc)
+	db.db.DropAll() // so we don't go nuts
+	defer db.db.Close()
+	foo := db.GetMO("foo")
+	bar := db.GetMO("bar")
+
+	// our mergefunc just appends bytes to bytes so let's just makes some bytes
+	hi := []byte("hi")
+	there := []byte("there")
+
+	foo.Add(hi)
+	foo.Add(there)
+	bar.Add(hi)
+	bar.Add(there)
+
+	// so these additions aren't all gonna be available to Get just yet
+
+	_ = db.db.View(func(txn *badger.Txn) error {
+		item, _ := txn.Get([]byte("foo"))
+		item.Value(func(val []byte) error {
+			assert.NotEqual(t, val, []byte("hithere"))
+			return nil
+		})
+		return nil
+	})
+
+	// but once we call Stop they should make sense
+
+	db.Stop()
+
+	time.Sleep(500 * time.Millisecond) // <- annoying; db.Sync() doesn't do what I think it should
+
+	_ = db.db.View(func(txn *badger.Txn) error {
+		item, _ := txn.Get([]byte("foo"))
+		item.Value(func(val []byte) error {
+			assert.Equal(t, val, []byte("hithere"))
+			return nil
+		})
+		return nil
+	})
+
+}
