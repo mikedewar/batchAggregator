@@ -11,6 +11,8 @@ import (
 	"github.com/xitongsys/parquet-go/reader"
 )
 
+type file string
+
 type GroupByField string
 
 type GroupBy struct {
