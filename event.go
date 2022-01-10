@@ -128,17 +128,23 @@ func (ss Students) Add(e Event) Events {
 
 func app(currentStudents, newStudent []byte) []byte {
 	// unmarshal the original array
-	var students Students
-	err := students.Unmarshal(currentStudents)
+	var c_students Students
+	err := c_students.Unmarshal(currentStudents)
 	if err != nil {
 		log.Fatal(err)
 	}
-	var student Students
-	err = student.Unmarshal(newStudent)
+	var n_student Students
+	err = n_student.Unmarshal(newStudent)
 	if err != nil {
 		log.Fatal(err)
 	}
-	return nil
+	var all_students Students
+	all_students = append(c_students, n_student...)
+	out_bytes, err := all_students.Marshal()
+	if err != nil {
+		log.Fatal(err)
+	}
+	return out_bytes
 }
 
 /*

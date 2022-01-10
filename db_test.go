@@ -12,6 +12,24 @@ func mergeFunc(a, b []byte) []byte {
 	return append(a, b...)
 }
 
+func CheckValueEqual(db DB, t *testing.T, key, expectedValue string) {
+
+	err := db.db.View(func(txn *badger.Txn) error {
+		item, err := txn.Get([]byte(key))
+		if err != nil {
+			t.Fatal(err)
+		}
+		item.Value(func(val []byte) error {
+			assert.Equal(t, val, []byte(expectedValue))
+			return nil
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestNewDB(t *testing.T) {
 	db := NewDB("/tmp/testbadger", mergeFunc)
 	db.db.Close()
@@ -43,8 +61,8 @@ func TestStop(t *testing.T) {
 
 	foo.Add(hi)
 	foo.Add(there)
-	bar.Add(hi)
 	bar.Add(there)
+	bar.Add(hi)
 
 	// so these additions aren't all gonna be available to Get just yet
 
@@ -63,13 +81,7 @@ func TestStop(t *testing.T) {
 
 	time.Sleep(500 * time.Millisecond) // <- annoying; db.Sync() doesn't do what I think it should
 
-	_ = db.db.View(func(txn *badger.Txn) error {
-		item, _ := txn.Get([]byte("foo"))
-		item.Value(func(val []byte) error {
-			assert.Equal(t, val, []byte("hithere"))
-			return nil
-		})
-		return nil
-	})
+	CheckValueEqual(db, t, "foo", "hithere")
+	CheckValueEqual(db, t, "bar", "therehi")
 
 }
