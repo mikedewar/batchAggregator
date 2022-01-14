@@ -36,7 +36,23 @@ func (s *Student) GetID() string {
 	return s.Id
 }
 
-func (s *Student) Unmarshal(data []byte) error {
+func (ss Student) Unmarshal(data []byte) error {
+	var s protos.Student
+	err := proto.Unmarshal(data, &s)
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+	ss = Student{
+		Name:    s.Name,
+		Age:     s.Age,
+		Id:      s.Id,
+		Weight:  s.Weight,
+		Sex:     s.Sex,
+		Day:     s.Day,
+		Scores:  s.Scores,
+		Ignored: s.Ignored,
+	}
 	return nil
 }
 
@@ -146,58 +162,3 @@ func app(currentStudents, newStudent []byte) []byte {
 	}
 	return out_bytes
 }
-
-/*
-	err := json.Unmarshal(currentStudents, &students)
-	if err != nil {
-		// the first time we unmarshal it's actually going to
-		// be a single student so let's try unmarhsalling that first
-		// before giving up
-
-		var firstStudent Student
-		err = json.Unmarshal(currentStudents, &firstStudent)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		// add the first student to the still-empty students array
-		students = append(students, firstStudent)
-	}
-
-	//unmarhsal the new value
-
-	// note that newStudent might be a bunch of already aggregated  messages!
-	// so newStudent might be a single student {....} or an array of students
-	// [{..}, {..}, ...]
-
-	switch newStudent[0] {
-	case []byte("[")[0]:
-		var student []Student
-		err = json.Unmarshal(newStudent, &student)
-		if err != nil {
-			log.Println(string(newStudent), "\n//\n", string(currentStudents))
-			log.Fatal(err)
-		}
-		students = append(students, student...)
-	case []byte("{")[0]:
-		var student Student
-		err = json.Unmarshal(newStudent, &student)
-		if err != nil {
-			log.Println(string(newStudent), "\n//\n", string(currentStudents))
-			log.Fatal(err)
-		}
-		// add the new student to the list and overwrite
-		students = append(students, student)
-	default:
-		log.Fatal("could not unmarshal the new value")
-	}
-
-	// Marhsal and return
-	studentsBytes, err := json.Marshal(students)
-	if err != nil {
-		log.Fatal(err)
-	}
-	return studentsBytes
-
-}
-*/
