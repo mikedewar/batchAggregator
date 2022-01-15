@@ -1,7 +1,6 @@
 package main
 
 import (
-	"log"
 	"testing"
 	"time"
 
@@ -66,38 +65,41 @@ func TestStudentsUnmarshalMarshal(t *testing.T) {
 	}
 
 	var thesamestudents Students
-	log.Println("before", thesamestudents)
 
 	err = thesamestudents.Unmarshal(ssBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
-	log.Println("after", thesamestudents)
 
 	assert.Equal(t, ss, thesamestudents)
 
 }
 
-/*
 func TestApp(t *testing.T) {
 
-	s := GetTestStudent()
+	s1 := GetTestStudent()
+	s2 := GetTestStudent()
 
-	studentBytes, err := s.Marshal()
+	ss := Students{
+		data: []Student{s1, s2}}
+
+	ssBytes, err := ss.Marshal()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	twoStudentsBytes := app(studentBytes, studentBytes)
+	fourStudentsBytes := app(ssBytes, ssBytes)
 
-	var bothStudents Students
+	var fourStudents Students
 
-	err = bothStudents.Unmarshal(twoStudentsBytes)
+	err = fourStudents.Unmarshal(fourStudentsBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	log.Println(bothStudents)
+	originalFourStudents := Students{
+		data: []Student{s1, s2, s1, s2}}
+
+	assert.Equal(t, originalFourStudents, fourStudents)
 
 }
-*/
