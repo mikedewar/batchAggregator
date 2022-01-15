@@ -8,19 +8,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-type Event interface {
-	Unmarshal(data []byte) error
-	Marshal() (data []byte, err error)
-	GroupByKey() GroupByField
-	GetID() string
-}
-
-type Events interface {
-	Unmarshal(data []byte) error
-	Marshal() (data []byte, err error)
-	Add(Event) Events
-}
-
 type Student struct {
 	Name    string           `parquet:"name=name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	Age     int32            `parquet:"name=age, type=INT32"`
@@ -36,23 +23,21 @@ func (s *Student) GetID() string {
 	return s.Id
 }
 
-func (ss Student) Unmarshal(data []byte) error {
+func (ss *Student) Unmarshal(data []byte) error {
 	var s protos.Student
 	err := proto.Unmarshal(data, &s)
 	if err != nil {
 		log.Println(err)
 		return err
 	}
-	ss = Student{
-		Name:    s.Name,
-		Age:     s.Age,
-		Id:      s.Id,
-		Weight:  s.Weight,
-		Sex:     s.Sex,
-		Day:     s.Day,
-		Scores:  s.Scores,
-		Ignored: s.Ignored,
-	}
+	ss.Name = s.Name
+	ss.Age = s.Age
+	ss.Id = s.Id
+	ss.Weight = s.Weight
+	ss.Sex = s.Sex
+	ss.Day = s.Day
+	ss.Scores = s.Scores
+	ss.Ignored = s.Ignored
 	return nil
 }
 
@@ -79,9 +64,11 @@ func (s *Student) GroupByKey() GroupByField {
 	return GroupByField(age)
 }
 
-type Students []Student
+type Students struct {
+	data []Student
+}
 
-func (ss Students) Unmarshal(data []byte) error {
+func (ss *Students) Unmarshal(data []byte) error {
 	var protoStudents protos.Students
 	err := proto.Unmarshal(data, &protoStudents)
 	if err != nil {
@@ -106,16 +93,17 @@ func (ss Students) Unmarshal(data []byte) error {
 
 	}
 
-	ss = myss
+	ss.data = myss
+
 	return nil
 
 }
 
-func (ss Students) Marshal() ([]byte, error) {
+func (ss *Students) Marshal() ([]byte, error) {
 	var protoStudents protos.Students
-	outStudents := make([]*protos.Student, len(ss))
-	// we need to convert ss into a proto.Students and then marhsal
-	for i, s := range ss {
+
+	outStudents := make([]*protos.Student, len(ss.data))
+	for i, s := range ss.data {
 
 		outStudents[i] = &protos.Student{
 			Name:    s.Name,
@@ -135,11 +123,10 @@ func (ss Students) Marshal() ([]byte, error) {
 	return proto.Marshal(&protoStudents)
 }
 
-func (ss Students) Add(e Event) Events {
-	old := []Student(ss)
-	newStudent := e.(*Student)
-	newArray := append(old, *newStudent)
-	return Students(newArray)
+func (ss *Students) Add(s Student) {
+	old := ss.data
+	newArray := append(old, s)
+	ss.data = newArray
 }
 
 func app(currentStudents, newStudent []byte) []byte {
@@ -155,7 +142,8 @@ func app(currentStudents, newStudent []byte) []byte {
 		log.Fatal(err)
 	}
 	var all_students Students
-	all_students = append(c_students, n_student...)
+	all_students_data := append(c_students.data, n_student.data...)
+	all_students.data = all_students_data
 	out_bytes, err := all_students.Marshal()
 	if err != nil {
 		log.Fatal(err)

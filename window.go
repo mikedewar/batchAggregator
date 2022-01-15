@@ -8,7 +8,7 @@ import (
 
 type Window struct {
 	key    GroupByField
-	events []Event
+	events []Student
 	mo     badger.MergeOperator
 }
 
@@ -27,11 +27,7 @@ func (w *Window) LoadIntoMemory() error {
 	return nil
 }
 
-// Values returns an orderd array of Events
-// if you need access to the values themselves, use this method
-// Note that to update a window with new values, you don't need to explicitly
-// retrieve the values, use UpdateStorage instead.
-func (w Window) Values() []Event {
+func (w Window) Values() []Student {
 	err := w.LoadIntoMemory()
 	if err != nil {
 		log.Fatal(err)

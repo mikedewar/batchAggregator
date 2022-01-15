@@ -25,7 +25,7 @@ type GroupBy struct {
 
 // eventWrapper lets us keep track of which file the event came from
 type eventWrapper struct {
-	event Event
+	event Student
 	f     file
 }
 
@@ -117,7 +117,7 @@ func (gb *GroupBy) ReadFiles() error {
 					log.Println("wtf")
 					continue
 				}
-				e := eventWrapper{&stus[0], f}
+				e := eventWrapper{stus[0], f}
 				gb.events <- e
 			}
 			pr.ReadStop()
@@ -154,7 +154,7 @@ func (gb *GroupBy) AsyncBuildGroup() {
 		if i == N {
 
 			// this is clumsy
-			togroup := make([]Event, N)
+			togroup := make([]Student, N)
 			for j, e := range res {
 				togroup[j] = e.event
 			}
@@ -176,7 +176,7 @@ func (gb *GroupBy) AsyncBuildGroup() {
 
 	// do the last
 	res = res[:i]
-	togroup := make([]Event, i)
+	togroup := make([]Student, i)
 	for j, e := range res {
 		togroup[j] = e.event
 	}
@@ -184,43 +184,45 @@ func (gb *GroupBy) AsyncBuildGroup() {
 	gb.Commit(grouped)
 }
 
-func (gb *GroupBy) BuildGroup(res []Event) map[GroupByField]Events {
+func (gb *GroupBy) BuildGroup(res []Student) map[GroupByField][]Student {
 
-	arrays := make(map[GroupByField]Events)
+	arrays := make(map[GroupByField][]Student)
 
 	// group by the GroupByKey
-	for _, studentI := range res {
-		//	bar.Increment()
-		student := studentI
+	for _, student := range res {
 		key := student.GroupByKey()
 
 		// should be a btree
 		oldArray, ok := arrays[key]
 		if !ok {
-			a := make([]Student, 1)
-			oldArray = Students(a)
+			// if we didn't find it, we need to make an new one
+			oldArray = make([]Student, 0)
 		}
-		oldArray = oldArray.Add(student)
-		arrays[key] = oldArray
+		// append the new event
+		newArray := append(oldArray, student)
+		arrays[key] = newArray
 	}
 	return arrays
 
 }
 
-func (gb *GroupBy) Commit(arrays map[GroupByField]Events) {
+func (gb *GroupBy) Commit(arrays map[GroupByField][]Student) {
 
 	bar := gb.AddProgressBar(len(arrays), "Committing latest batch")
 
-	for key, value := range arrays {
+	for key, array := range arrays {
+
+		// create an Events object to Marshal
+		students := Students{data: array}
 
 		mo := gb.db.GetMO(string(key))
 
-		valueBytes, err := value.Marshal()
+		studentsBytes, err := students.Marshal()
 		if err != nil {
-			log.Fatal(valueBytes)
+			log.Fatal(studentsBytes)
 		}
 
-		mo.Add(valueBytes)
+		mo.Add(studentsBytes)
 		bar.Increment()
 
 	}
