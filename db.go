@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/dgraph-io/badger"
+	"github.com/vbauerster/mpb/v7"
 )
 
 type DB struct {
@@ -41,10 +42,11 @@ func (db *DB) GetMO(key string) *badger.MergeOperator {
 
 }
 
-func (db *DB) Stop() {
+func (db *DB) Stop(progressBar *mpb.Bar) {
 	log.Println("stopping", len(db.mergeOperators), "merge operators")
 	for _, mo := range db.mergeOperators {
 		mo.Stop()
+		progressBar.Increment()
 	}
 	// once the MOs are stopped, let's sync the db so we leave it in a stable
 	// state

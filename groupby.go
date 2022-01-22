@@ -1,8 +1,10 @@
 package main
 
 import (
+	"errors"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -19,8 +21,7 @@ type GroupBy struct {
 	events       chan eventWrapper
 	progressBars *mpb.Progress
 	db           DB
-	//reconciler   *Reconciler
-	files []file
+	files        []file
 }
 
 // eventWrapper lets us keep track of which file the event came from
@@ -29,15 +30,15 @@ type eventWrapper struct {
 	f     file
 }
 
-func NewGroupBy() GroupBy {
+func NewGroupBy(dbPath string, parquetFiles []file) GroupBy {
 
-	db := NewDB("/tmp/badger", app)
+	db := NewDB(dbPath, app)
 
 	gb := GroupBy{
 		events:       make(chan eventWrapper),
 		progressBars: InitProgressBars(),
 		db:           db,
-		//reconciler:   NewReconciler(),
+		files:        parquetFiles,
 	}
 
 	return gb
@@ -45,82 +46,53 @@ func NewGroupBy() GroupBy {
 
 func (gb *GroupBy) Stop() {
 	bar := gb.AddProgressBar(len(gb.db.mergeOperators), "finalising write")
-	for _, mo := range gb.db.mergeOperators {
-		mo.Stop()
-		bar.Increment()
-	}
+	gb.db.Stop(bar)
+	gb.db.db.Close() // <- this still feels clunky, think we need a DB.Close()
 }
 
-// ReadFiles looks for all the parquet files in a folder, reads them by parsing
-// each line and placing the resulting object on a channel for downstream
-// processing. ReadFiles is designed to manage the reading of multiple files at
-// the same time.
-func (gb *GroupBy) ReadFiles() error {
-	dirname := "."
+func GetParquetFiles(dirname string) ([]file, error) {
 
 	files, err := os.ReadDir(dirname)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 
 	parquet_files := make([]file, 0)
 	for _, f := range files {
 		if strings.HasSuffix(f.Name(), ".parquet") {
-			parquet_files = append(parquet_files, file(f.Name()))
+			parquet_files = append(parquet_files, file(filepath.Join(dirname, f.Name())))
 		}
 	}
 
 	if len(parquet_files) == 0 {
-		log.Fatal("can't find any parquet files in ", dirname)
+		return nil, errors.New("can't find any parquet files in " + dirname)
 	}
 
-	gb.files = parquet_files
+	return parquet_files, nil
+
+}
+
+func (gb *GroupBy) ProcessFiles() error {
 
 	// the watigroup means that all the file reading goroutines must be complete
 	// before this function returns
 	var wg sync.WaitGroup
-	totalbar := gb.AddProgressBar(len(parquet_files), "total")
+	totalbar := gb.AddProgressBar(len(gb.files), "total")
 
 	// the guard channel blocks the for loop below from kicking off too many
 	// file-reading goroutines at a time.
 	maxGoroutines := 11
 	guard := make(chan struct{}, maxGoroutines)
 
-	for _, f := range parquet_files {
+	for _, f := range gb.files {
 		wg.Add(1)
 
 		guard <- struct{}{}
 
+		// this function
 		go func(f file) {
 			defer wg.Done()
-			fr, err := local.NewLocalFileReader(string(f))
-			if err != nil {
-				log.Fatal("Can't open file")
-			}
-
-			pr, err := reader.NewParquetReader(fr, new(Student), 4)
-			if err != nil {
-				log.Fatal("Can't create parquet reader", err)
-			}
-
-			//gb.reconciler.RegisterFile(f)
-
-			num := int(pr.GetNumRows())
-			bar := gb.AddProgressBar(num, string(f)+": Read   ")
-			for i := 0; i < num; i++ {
-				bar.Increment()
-				stus := make([]Student, 1)
-				if err = pr.Read(&stus); err != nil {
-					log.Fatal("Read error", err)
-				}
-				if len(stus) == 0 {
-					log.Println("wtf")
-					continue
-				}
-				e := eventWrapper{stus[0], f}
-				gb.events <- e
-			}
-			pr.ReadStop()
+			gb.UnpackFile(f)
 			totalbar.Increment()
 			//gb.reconciler.CommitFile(f)
 			<-guard
@@ -131,6 +103,38 @@ func (gb *GroupBy) ReadFiles() error {
 	wg.Wait()
 	close(gb.events)
 	return nil
+}
+
+func (gb *GroupBy) UnpackFile(f file) {
+	fr, err := local.NewLocalFileReader(string(f))
+	if err != nil {
+		log.Fatal("Can't open file")
+	}
+
+	pr, err := reader.NewParquetReader(fr, new(Student), 4)
+	if err != nil {
+		log.Fatal("Can't create parquet reader", err)
+	}
+
+	//gb.reconciler.RegisterFile(f)
+
+	num := int(pr.GetNumRows())
+	bar := gb.AddProgressBar(num, string(f)+": Read   ")
+	for i := 0; i < num; i++ {
+		bar.Increment()
+		stus := make([]Student, 1)
+		if err = pr.Read(&stus); err != nil {
+			log.Fatal("Read error", err)
+		}
+		if len(stus) == 0 {
+			log.Println("wtf")
+			continue
+		}
+		e := eventWrapper{stus[0], f}
+		gb.events <- e
+
+	}
+	pr.ReadStop()
 }
 
 //AsyncBuildGroup reads a channel of events, batching them up into large

@@ -14,7 +14,9 @@ func main() {
 		WriteSample(5)
 	}
 
-	gb := NewGroupBy()
+	files, err := GetParquetFiles(".")
+
+	gb := NewGroupBy("/tmp/badger", files)
 	// set the groupby running
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -24,7 +26,7 @@ func main() {
 	}()
 
 	// read all the parquet files in the current directory
-	err := gb.ReadFiles()
+	err = gb.ProcessFiles()
 	if err != nil {
 		log.Fatal(err)
 	}

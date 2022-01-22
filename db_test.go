@@ -6,6 +6,7 @@ import (
 
 	"github.com/dgraph-io/badger"
 	"github.com/stretchr/testify/assert"
+	"github.com/vbauerster/mpb/v7"
 )
 
 func mergeFunc(a, b []byte) []byte {
@@ -50,8 +51,8 @@ func TestStop(t *testing.T) {
 	// so let's set two going, and then stop them.  They by default flush at 60s
 	// intervals so as long as we call Stop within 60s the test should be good
 	db := NewDB("/tmp/testbadger", mergeFunc)
-	db.db.DropAll() // so we don't go nuts
-	defer db.db.Close()
+	db.db.DropAll()     // so we don't go nuts
+	defer db.db.Close() //
 	foo := db.GetMO("foo")
 	bar := db.GetMO("bar")
 
@@ -77,7 +78,11 @@ func TestStop(t *testing.T) {
 
 	// but once we call Stop they should make sense
 
-	db.Stop()
+	// gotta make a little progress bar!
+	p := mpb.New(mpb.WithWidth(64))
+	pbar := p.New(int64(2), mpb.BarStyle())
+
+	db.Stop(pbar)
 
 	time.Sleep(500 * time.Millisecond) // <- annoying; db.Sync() doesn't do what I think it should
 

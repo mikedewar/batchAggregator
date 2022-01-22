@@ -26,6 +26,30 @@ func GetTestStudent() Student {
 
 }
 
+func GetStudents(n int) []Student {
+
+	out := make([]Student, n)
+
+	for i := 0; i < n; i++ {
+		out[i] = Student{
+			Name:   "Mike",
+			Age:    41,
+			Id:     uuid.NewString(),
+			Weight: 86.4,
+			Sex:    true,
+			Day:    int32(time.Now().Unix() / 3600 / 24),
+			Scores: map[string]int32{
+				"math":     int32(90),
+				"physics":  int32(80),
+				"computer": int32(70),
+			},
+		}
+	}
+
+	return out
+
+}
+
 func TestGetID(t *testing.T) {
 	s := GetTestStudent()
 	assert.Equal(t, s.GetID(), s.Id, "didn't get the right ID")
@@ -79,6 +103,10 @@ func TestApp(t *testing.T) {
 
 	s1 := GetTestStudent()
 	s2 := GetTestStudent()
+	s3 := GetTestStudent()
+
+	s2.Name = "Bob"
+	s3.Name = "Sally"
 
 	ss := Students{
 		data: []Student{s1, s2}}
@@ -88,7 +116,15 @@ func TestApp(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fourStudentsBytes := app(ssBytes, ssBytes)
+	sss := Students{
+		data: []Student{s2, s3}}
+
+	sssBytes, err := sss.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fourStudentsBytes := app(ssBytes, sssBytes)
 
 	var fourStudents Students
 
@@ -98,7 +134,7 @@ func TestApp(t *testing.T) {
 	}
 
 	originalFourStudents := Students{
-		data: []Student{s1, s2, s1, s2}}
+		data: []Student{s1, s2, s2, s3}}
 
 	assert.Equal(t, originalFourStudents, fourStudents)
 
