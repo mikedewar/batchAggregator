@@ -194,7 +194,7 @@ func (gb *GroupBy) BuildGroup(res []Student) map[GroupByField][]Student {
 
 	// group by the GroupByKey
 	for _, student := range res {
-		key := student.GroupByKey()
+		key := student.GroupByKey("age")
 
 		// should be a btree
 		oldArray, ok := arrays[key]

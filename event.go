@@ -59,9 +59,14 @@ func (s *Student) Marshal() (data []byte, err error) {
 
 }
 
-func (s *Student) GroupByKey() GroupByField {
-	age := strconv.Itoa(int(s.Age))
-	return GroupByField(age)
+func (s *Student) GroupByKey(key string) GroupByField {
+	switch key {
+	case "age":
+		age := strconv.Itoa(int(s.Age))
+		return GroupByField(age)
+	}
+	log.Fatal("cannot group by the requested field: ", key)
+	return GroupByField("")
 }
 
 type Students struct {

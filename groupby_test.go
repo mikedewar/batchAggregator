@@ -168,6 +168,7 @@ func TestUnpackFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	gb := NewGroupBy("/tmp/testbadgber", files)
+	defer gb.Stop()
 
 	// kick off the unpack in a go rountine
 	// it will be blocked until we start listening to gb.events
@@ -256,6 +257,7 @@ func TestProcessFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	gb := NewGroupBy("/tmp/testbadgber", files)
+	defer gb.Stop()
 
 	// kick off the Processing in a go rountine
 	// it will be blocked until we start listening to gb.events
