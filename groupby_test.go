@@ -11,6 +11,7 @@ import (
 	"github.com/dgraph-io/badger"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"github.com/vbauerster/mpb/v7"
 	"github.com/xitongsys/parquet-go-source/local"
 	"github.com/xitongsys/parquet-go/parquet"
 	"github.com/xitongsys/parquet-go/writer"
@@ -184,30 +185,31 @@ func TestUnpackFile(t *testing.T) {
 
 }
 
-func TestProcessFiles(t *testing.T) {
-
+func MakeTwoParquetFilesWithThreeEventsEach(t *testing.T) (string, []Student) {
 	// make two parquet files in a folder, with three events in each
+
+	// note that all the students have age 41
 
 	students_1 := GetStudents(3)
 	students_2 := GetStudents(3)
+	students := append(students_1, students_2...)
 
 	dir, err := os.MkdirTemp("", "testProcessFile")
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer os.RemoveAll(dir)
 
 	// do the first file with students_1 in it
 	fname := filepath.Join(dir, "sudents_1.parquet")
 	fw, err := local.NewLocalFileWriter(fname)
 	if err != nil {
 		t.Fatal("Can't create local file", err)
-		return
+		return "", students
 	}
 	pw, err := writer.NewParquetWriter(fw, new(Student), 4)
 	if err != nil {
 		t.Fatal("Can't create parquet writer", err)
-		return
+		return "", students
 	}
 	// i have no clue what these do!
 	pw.RowGroupSize = 128 * 1024 * 1024 //128M
@@ -220,7 +222,7 @@ func TestProcessFiles(t *testing.T) {
 	}
 	if err = pw.WriteStop(); err != nil {
 		t.Fatal("WriteStop error", err)
-		return
+		return "", students
 	}
 	fw.Close()
 
@@ -229,12 +231,12 @@ func TestProcessFiles(t *testing.T) {
 	fw, err = local.NewLocalFileWriter(fname)
 	if err != nil {
 		t.Fatal("Can't create local file", err)
-		return
+		return "", students
 	}
 	pw, err = writer.NewParquetWriter(fw, new(Student), 4)
 	if err != nil {
 		t.Fatal("Can't create parquet writer", err)
-		return
+		return "", students
 	}
 	// i have no clue what these do!
 	pw.RowGroupSize = 128 * 1024 * 1024 //128M
@@ -247,9 +249,18 @@ func TestProcessFiles(t *testing.T) {
 	}
 	if err = pw.WriteStop(); err != nil {
 		t.Fatal("WriteStop error", err)
-		return
+		return "", students
 	}
 	fw.Close()
+
+	return dir, students
+
+}
+
+func TestProcessFiles(t *testing.T) {
+
+	dir, students := MakeTwoParquetFilesWithThreeEventsEach(t)
+	defer os.RemoveAll(dir)
 
 	// make a groupby object
 	files, err := GetParquetFiles(dir)
@@ -274,8 +285,128 @@ func TestProcessFiles(t *testing.T) {
 		i++
 	}
 
+	assert.ElementsMatch(t, students, received)
+}
+
+// TestAsyncBuildGroup tests a short-run group-by. We're going to need to do
+// some work to test it properly!
+func TestAsyncBuildGroup(t *testing.T) {
+
+	// make the test files
+	dir, students := MakeTwoParquetFilesWithThreeEventsEach(t)
+	defer os.RemoveAll(dir)
+
+	// process the files
+	files, err := GetParquetFiles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gb := NewGroupBy("/tmp/testbadgber", files)
+	gb.db.db.DropAll() // so we don't go nuts
+	defer gb.db.db.Close()
+	go gb.ProcessFiles()
+
+	// right now ProcessFiles is blocked because nothing's reading gb.events
+	// so let's kick off AsynBuildGroup
+
+	// it should eat the six events, group them, and write them to the db. So let's
+	// run it to completion, then check the db.
+
+	gb.AsyncBuildGroup(3)
+
+	// don't forget all the students in the group are age 41. So there should
+	// only be one key in the DB which is "41" and it should have 6 Mikes in it
+
+	// note that the assert is buried in the centre of the closures (e.g. inside the view and
+	// value functions)
+
+	var fromDB Students
+
+	// we're gonna stop the db and wait half a sec for the merge operators to
+	// do their thing (stupid progress bar)
+	p := mpb.New(mpb.WithWidth(64), mpb.WithOutput(nil))
+	pbar := p.New(int64(2), mpb.BarStyle())
+	gb.db.Stop(pbar)
+	time.Sleep(500 * time.Millisecond)
+
+	err = gb.db.db.View(func(txn *badger.Txn) error {
+
+		key := "41"
+		item, err := txn.Get([]byte(key))
+		if err != nil {
+			t.Fatal(err)
+			return err
+		}
+
+		item.Value(func(val []byte) error {
+			err := fromDB.Unmarshal(val)
+			if err != nil {
+				t.Fatal(err)
+				return err // where the crap do these errors go?
+			}
+			assert.ElementsMatch(t, students, fromDB.data)
+			return nil
+		})
+		return nil
+	})
+
+}
+
+func TestCommit(t *testing.T) {
+
+	// make some groups with the same key
+	group_1 := make(map[GroupByField][]Student)
+	group_2 := make(map[GroupByField][]Student)
+
+	students_1 := GetStudents(3)
+	students_2 := GetStudents(3)
 	students := append(students_1, students_2...)
 
-	assert.ElementsMatch(t, students, received)
+	key := GroupByField("41")
+
+	group_1[key] = students_1
+	group_2[key] = students_2
+
+	// make the groupBy - note we don't need any files
+	files := make([]file, 0)
+	gb := NewGroupBy("/tmp/testbadgber", files)
+	gb.db.db.DropAll()     // so we don't go nuts
+	defer gb.db.db.Close() // don't call Stop coz you'll close already closed merge operators and badger will panic
+
+	// commit the first group and the second group
+	gb.Commit(group_1)
+	gb.Commit(group_2)
+
+	// we're gonna stop the db and wait half a sec for the merge operators to
+	// do their thing (stupid progress bar)
+	p := mpb.New(mpb.WithWidth(64), mpb.WithOutput(nil))
+	pbar := p.New(int64(2), mpb.BarStyle())
+	gb.db.Stop(pbar)
+	time.Sleep(500 * time.Millisecond)
+
+	// make sure it's all there
+	var fromDB Students
+	err := gb.db.db.View(func(txn *badger.Txn) error {
+		key := "41"
+		item, err := txn.Get([]byte(key))
+		if err != nil {
+			t.Fatal(err)
+			return err
+		}
+
+		item.Value(func(val []byte) error {
+			err := fromDB.Unmarshal(val)
+			if err != nil {
+				t.Fatal(err)
+				return err // where the crap do these errors go?
+			}
+			assert.ElementsMatch(t, students, fromDB.data)
+			return nil
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 }

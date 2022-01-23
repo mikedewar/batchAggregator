@@ -140,18 +140,14 @@ func (gb *GroupBy) UnpackFile(f file) {
 //AsyncBuildGroup reads a channel of events, batching them up into large
 //groups and sending them to BuildGroup to be re-ogranised by the GroupByKey
 //and then to Commit for it to be commited to the badger db
-func (gb *GroupBy) AsyncBuildGroup() {
-
-	N := 5000000 // this really needs to be something to do with spare RAM
+// N is the maximum batch sizee. Make it as big as possible without swapping
+// on my laptop i use 5,000,000
+func (gb *GroupBy) AsyncBuildGroup(N int) {
 
 	res := make([]eventWrapper, N)
 
 	i := 0
 	for e := range gb.events {
-
-		//eventID := e.event.GetID()
-
-		//gb.reconciler.RegisterEvent(e.f, event(eventID))
 
 		res[i] = e
 		i++
@@ -167,25 +163,23 @@ func (gb *GroupBy) AsyncBuildGroup() {
 			gb.Commit(grouped)
 			i = 0
 
-			// commit all the events in the group
-			/*
-				for _, e := range res {
-					gb.reconciler.CommitEvent(e.f, event(e.event.GetID()))
-				}*/
 			// blat res and start again
 			res = nil
 			res = make([]eventWrapper, N)
 		}
 	}
 
-	// do the last
-	res = res[:i]
-	togroup := make([]Student, i)
-	for j, e := range res {
-		togroup[j] = e.event
+	// do the last bit if needed
+	if i > 0 {
+		log.Println("tidy up")
+		res = res[:i]
+		togroup := make([]Student, i)
+		for j, e := range res {
+			togroup[j] = e.event
+		}
+		grouped := gb.BuildGroup(togroup)
+		gb.Commit(grouped)
 	}
-	grouped := gb.BuildGroup(togroup)
-	gb.Commit(grouped)
 }
 
 func (gb *GroupBy) BuildGroup(res []Student) map[GroupByField][]Student {

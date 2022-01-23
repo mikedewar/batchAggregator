@@ -6,7 +6,7 @@ import (
 )
 
 func InitProgressBars() *mpb.Progress {
-	p := mpb.New(mpb.WithWidth(64))
+	p := mpb.New(mpb.WithWidth(64)) //, mpb.WithOutput(nil))
 	return p
 }
 

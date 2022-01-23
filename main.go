@@ -22,7 +22,7 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		gb.AsyncBuildGroup()
+		gb.AsyncBuildGroup(5000000)
 	}()
 
 	// read all the parquet files in the current directory
