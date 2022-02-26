@@ -273,7 +273,7 @@ func TestProcessFiles(t *testing.T) {
 	// kick off the Processing in a go rountine
 	// it will be blocked until we start listening to gb.events
 
-	go gb.ProcessFiles()
+	go gb.ProcessFiles(10)
 
 	// consume from gb.events and make sure we get all 6 events
 
@@ -304,7 +304,7 @@ func TestAsyncBuildGroup(t *testing.T) {
 	gb := NewGroupBy("/tmp/testbadgber", files)
 	gb.db.db.DropAll() // so we don't go nuts
 	defer gb.db.db.Close()
-	go gb.ProcessFiles()
+	go gb.ProcessFiles(10)
 
 	// right now ProcessFiles is blocked because nothing's reading gb.events
 	// so let's kick off AsynBuildGroup

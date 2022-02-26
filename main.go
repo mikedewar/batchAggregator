@@ -11,7 +11,7 @@ func main() {
 
 	if _, err := os.Stat("sample_1.parquet"); errors.Is(err, os.ErrNotExist) {
 		log.Println("writing sample")
-		WriteSample(5)
+		WriteSample(10)
 	}
 
 	files, err := GetParquetFiles(".")
@@ -26,7 +26,7 @@ func main() {
 	}()
 
 	// read all the parquet files in the current directory
-	err = gb.ProcessFiles()
+	err = gb.ProcessFiles(199)
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"sync"
 	"time"
 
 	"github.com/dgraph-io/badger"
@@ -44,9 +45,18 @@ func (db *DB) GetMO(key string) *badger.MergeOperator {
 
 func (db *DB) Stop(progressBar *mpb.Bar) {
 	log.Println("stopping", len(db.mergeOperators), "merge operators")
+
+	var wg sync.WaitGroup
+
 	for _, mo := range db.mergeOperators {
-		mo.Stop()
-		progressBar.Increment()
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			mo.Stop()
+			progressBar.Increment()
+		}()
+		time.Sleep(1 * time.Millisecond)
 	}
 	// once the MOs are stopped, let's sync the db so we leave it in a stable
 	// state

@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -45,7 +46,8 @@ func NewGroupBy(dbPath string, parquetFiles []file) GroupBy {
 }
 
 func (gb *GroupBy) Stop() {
-	bar := gb.AddProgressBar(len(gb.db.mergeOperators), "finalising write")
+	n := len(gb.db.mergeOperators)
+	bar := gb.AddProgressBar(n, "stopping "+strconv.Itoa(n)+"merge operators")
 	gb.db.Stop(bar)
 	gb.db.db.Close() // <- this still feels clunky, think we need a DB.Close()
 }
@@ -72,7 +74,7 @@ func GetParquetFiles(dirname string) ([]file, error) {
 
 }
 
-func (gb *GroupBy) ProcessFiles() error {
+func (gb *GroupBy) ProcessFiles(maxGoroutines int) error {
 
 	// the watigroup means that all the file reading goroutines must be complete
 	// before this function returns
@@ -81,7 +83,6 @@ func (gb *GroupBy) ProcessFiles() error {
 
 	// the guard channel blocks the for loop below from kicking off too many
 	// file-reading goroutines at a time.
-	maxGoroutines := 11
 	guard := make(chan struct{}, maxGoroutines)
 
 	for _, f := range gb.files {

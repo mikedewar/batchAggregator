@@ -32,7 +32,7 @@ func WriteSample(numFiles int) {
 
 		pw.RowGroupSize = 128 * 1024 * 1024 //128M
 		pw.CompressionType = parquet.CompressionCodec_SNAPPY
-		num := 1000000 //500000 + rand.Intn(50000)
+		num := 100000 //500000 + rand.Intn(50000)
 		for i := 0; i < num; i++ {
 			stu := Student{
 				Name:   "StudentName",
